@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   Award,
   Briefcase,
+  Check,
+  Copy,
   Cpu,
   Eye,
   FolderKanban,
@@ -27,6 +29,7 @@ import {
 import { usePortfolio } from '../context/PortfolioContext';
 import { useTheme } from '../context/ThemeContext';
 import { markVisitedAdminSession } from '../lib/routing';
+import { formatFirebaseAuthError } from '../lib/validation';
 import { AdminOverview } from '../components/admin/AdminOverview';
 import {
   AboutEditor,
@@ -121,6 +124,8 @@ export function AdminPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [authError, setAuthError] = useState('');
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
@@ -157,11 +162,20 @@ export function AdminPage() {
   const handleLogin = async () => {
     if (lockoutUntil && Date.now() < lockoutUntil) return;
     setAuthError('');
+    setUnauthorizedDomain(null);
+    setCopiedDomain(false);
     setSigningIn(true);
     try {
       await signInWithGoogle();
       setFailedAttempts(0);
     } catch (err) {
+      const formatted = formatFirebaseAuthError(
+        err,
+        typeof window !== 'undefined' ? window.location.hostname : ''
+      );
+      if (formatted.unauthorizedDomain) {
+        setUnauthorizedDomain(formatted.unauthorizedDomain);
+      }
       const nextAttempts = failedAttempts + 1;
       setFailedAttempts(nextAttempts);
       if (nextAttempts >= MAX_ATTEMPTS) {
@@ -170,11 +184,7 @@ export function AdminPage() {
           'Too many failed authentication attempts. Please wait 30 seconds before trying again.'
         );
       } else {
-        setAuthError(
-          err instanceof Error
-            ? err.message
-            : 'Authentication could not be completed. Please try again.'
-        );
+        setAuthError(formatted.message);
       }
     } finally {
       setSigningIn(false);
@@ -238,9 +248,40 @@ export function AdminPage() {
             {authError && (
               <div
                 role="alert"
-                className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs text-rose-600 dark:text-rose-400"
+                className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs text-rose-600 dark:text-rose-400 space-y-2.5"
               >
-                {authError}
+                <p>{authError}</p>
+                {unauthorizedDomain && (
+                  <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-rose-500/20">
+                    <code className="font-mono text-[11px] bg-black/10 dark:bg-white/10 px-2 py-1 rounded truncate">
+                      {unauthorizedDomain}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(unauthorizedDomain);
+                          setCopiedDomain(true);
+                        } catch {
+                          setCopiedDomain(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-medium hover:bg-rose-500 shrink-0"
+                    >
+                      {copiedDomain ? (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy domain</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

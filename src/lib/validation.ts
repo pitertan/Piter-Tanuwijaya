@@ -346,3 +346,95 @@ export function getAnchorElementId(href: string): string | null {
   const id = href.slice(1).trim();
   return id.length > 0 ? id : null;
 }
+
+export function validateMediaImageUrl(rawUrl: string): {
+  valid: boolean;
+  normalizedUrl?: string;
+  error?: string;
+} {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return { valid: false, error: 'Image URL is required.' };
+  }
+  if (trimmed.length > 600) {
+    return {
+      valid: false,
+      error: 'Image URL must be 600 characters or fewer.',
+    };
+  }
+  if (/\s/.test(trimmed)) {
+    return { valid: false, error: 'Image URL cannot contain spaces.' };
+  }
+  if (trimmed.startsWith('data:')) {
+    return {
+      valid: false,
+      error: 'Base64 data URLs are not supported. Use an HTTPS image URL or /uploads/ path.',
+    };
+  }
+  if (trimmed.startsWith('/')) {
+    return { valid: true, normalizedUrl: trimmed };
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return {
+        valid: false,
+        error: 'Image URL must use https://, http://, or a root-relative / path.',
+      };
+    }
+    return { valid: true, normalizedUrl: parsed.toString() };
+  } catch {
+    return { valid: false, error: 'Please enter a valid image URL.' };
+  }
+}
+
+export function formatFirebaseAuthError(
+  err: unknown,
+  hostname = ''
+): {
+  code: string;
+  message: string;
+  unauthorizedDomain?: string;
+} {
+  const code =
+    err && typeof err === 'object' && 'code' in err && typeof err.code === 'string'
+      ? err.code
+      : '';
+  const rawMessage = err instanceof Error ? err.message : String(err || '');
+
+  if (
+    code === 'auth/unauthorized-domain' ||
+    rawMessage.includes('auth/unauthorized-domain')
+  ) {
+    const domain = hostname.trim() || 'your deployment domain';
+    return {
+      code: 'auth/unauthorized-domain',
+      unauthorizedDomain: hostname.trim() || undefined,
+      message: `Domain "${domain}" is not allowlisted in Firebase Authentication. Add "${domain}" under Firebase Console → Authentication → Settings → Authorized domains, then sign in again.`,
+    };
+  }
+
+  if (code === 'auth/popup-blocked' || rawMessage.includes('auth/popup-blocked')) {
+    return {
+      code: 'auth/popup-blocked',
+      message: 'Sign-in popup was blocked by your browser. Allow popups for this site and try again.',
+    };
+  }
+
+  if (
+    code === 'auth/popup-closed-by-user' ||
+    rawMessage.includes('auth/popup-closed-by-user')
+  ) {
+    return {
+      code: 'auth/popup-closed-by-user',
+      message: 'Sign-in window was closed before completing authentication.',
+    };
+  }
+
+  return {
+    code: code || 'auth/unknown',
+    message:
+      rawMessage || 'Authentication could not be completed. Please try again.',
+  };
+}
+

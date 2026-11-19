@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Edit3,
   ImagePlus,
+  Link2,
   RefreshCw,
   Search,
   Trash2,
@@ -17,9 +18,29 @@ import {
   findMediaReferences,
   findOrphanedMedia,
   validateMediaFile,
+  validateMediaImageUrl,
 } from '../../lib/validation';
 import type { AllowedMediaMime, MediaAsset } from '../../types/portfolio';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+
+async function probeImageUrlDimensions(
+  url: string
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth || 1200,
+        height: img.naturalHeight || 800,
+      });
+    };
+    img.onerror = () => {
+      resolve({ width: 1200, height: 800 });
+    };
+    img.src = url;
+  });
+}
 
 async function generateImageMetadataAndThumbnail(file: File): Promise<{
   width: number;
@@ -86,6 +107,12 @@ export function MediaLibraryManager() {
   const [editAlt, setEditAlt] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [editCat, setEditCat] = useState('General');
+  const [editUrl, setEditUrl] = useState('');
+
+  const [externalUrl, setExternalUrl] = useState('');
+  const [externalTitle, setExternalTitle] = useState('');
+  const [addingByUrl, setAddingByUrl] = useState(false);
+  const [brokenAssetIds, setBrokenAssetIds] = useState<Record<string, boolean>>({});
 
   const [replacingAsset, setReplacingAsset] = useState<MediaAsset | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MediaAsset | null>(null);
@@ -144,6 +171,16 @@ export function MediaLibraryManager() {
           headers: { Authorization: `Bearer ${token}` },
           body: formData,
         });
+
+        const contentType = resp.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          showToast(
+            'Upload server unavailable here',
+            'error',
+            'Static hosting (GitHub Pages) has no upload backend. Use "Add Image via URL" below instead.'
+          );
+          break;
+        }
 
         const payload = await resp.json();
         if (!resp.ok) {
@@ -216,12 +253,79 @@ export function MediaLibraryManager() {
     }
   };
 
+  const handleAddExternalUrl = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const check = validateMediaImageUrl(externalUrl);
+    if (!check.valid || !check.normalizedUrl) {
+      showToast('Invalid Image URL', 'error', check.error);
+      return;
+    }
+
+    setAddingByUrl(true);
+    try {
+      const urlToUse = check.normalizedUrl;
+      const resolvedForProbe = resolveAssetUrl(
+        urlToUse,
+        import.meta.env.BASE_URL,
+        window.location.pathname,
+        window.location.hostname
+      );
+      const dims = await probeImageUrlDimensions(resolvedForProbe);
+      const rawName = urlToUse.split('/').pop()?.split('?')[0] || 'remote-image.jpg';
+      const cleanTitle =
+        externalTitle.trim() ||
+        rawName.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() ||
+        'Hosted Image';
+      const mediaId = `media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      await upsertDocument(
+        'media_library',
+        mediaId,
+        {
+          title: cleanTitle.slice(0, 160),
+          altText: cleanTitle.slice(0, 300),
+          description: '',
+          category: uploadCategory,
+          url: urlToUse,
+          thumbnailUrl: urlToUse,
+          mimeType: urlToUse.toLowerCase().endsWith('.png')
+            ? 'image/png'
+            : urlToUse.toLowerCase().endsWith('.webp')
+            ? 'image/webp'
+            : urlToUse.toLowerCase().endsWith('.svg')
+            ? 'image/svg+xml'
+            : 'image/jpeg',
+          sizeBytes: 0,
+          width: Math.round(dims.width),
+          height: Math.round(dims.height),
+          filename: rawName.slice(0, 200),
+          createdBy: auth.currentUser?.uid || 'admin',
+        },
+        true,
+        `Added external media URL "${cleanTitle}"`,
+        true
+      );
+      setExternalUrl('');
+      setExternalTitle('');
+      showToast('Image URL added', 'success', cleanTitle);
+    } catch (err) {
+      showToast(
+        'Failed to add image URL',
+        'error',
+        err instanceof Error ? err.message : undefined
+      );
+    } finally {
+      setAddingByUrl(false);
+    }
+  };
+
   const openEdit = (asset: MediaAsset) => {
     setEditingAsset(asset);
     setEditTitle(asset.title);
     setEditAlt(asset.altText);
     setEditDesc(asset.description);
     setEditCat(asset.category);
+    setEditUrl(asset.url);
   };
 
   const handleSaveMetadata = async (e: React.FormEvent) => {
@@ -231,6 +335,14 @@ export function MediaLibraryManager() {
       showToast('Title and Alt Text are required.', 'error');
       return;
     }
+    const urlCheck = validateMediaImageUrl(editUrl);
+    if (!urlCheck.valid || !urlCheck.normalizedUrl) {
+      showToast('Invalid Image URL', 'error', urlCheck.error);
+      return;
+    }
+
+    const nextUrl = urlCheck.normalizedUrl;
+    const urlChanged = nextUrl !== editingAsset.url;
 
     try {
       await upsertDocument(
@@ -241,8 +353,8 @@ export function MediaLibraryManager() {
           altText: editAlt.trim().slice(0, 300),
           description: editDesc.trim().slice(0, 600),
           category: editCat.trim() || 'General',
-          url: editingAsset.url,
-          thumbnailUrl: editingAsset.thumbnailUrl,
+          url: nextUrl,
+          thumbnailUrl: urlChanged ? nextUrl : editingAsset.thumbnailUrl,
           mimeType: editingAsset.mimeType,
           sizeBytes: Math.round(editingAsset.sizeBytes),
           width: Math.round(editingAsset.width),
@@ -254,10 +366,13 @@ export function MediaLibraryManager() {
         `Updated metadata for media "${editTitle.trim()}"`,
         true
       );
-      showToast('Media metadata saved', 'success');
+      if (urlChanged) {
+        setBrokenAssetIds((prev) => ({ ...prev, [editingAsset.id]: false }));
+      }
+      showToast('Media details saved', 'success');
       setEditingAsset(null);
     } catch {
-      showToast('Failed to save media metadata', 'error');
+      showToast('Failed to save media details', 'error');
     }
   };
 
@@ -377,6 +492,48 @@ export function MediaLibraryManager() {
         </div>
       </div>
 
+      {/* Add Hosted Image by URL (Works on GitHub Pages & static hosting) */}
+      <form
+        onSubmit={handleAddExternalUrl}
+        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F131A] p-4 sm:p-5 space-y-3"
+      >
+        <div className="flex items-center gap-2">
+          <Link2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+          <h3 className="text-sm font-display font-semibold">
+            Add Hosted Image URL (Recommended for GitHub Pages)
+          </h3>
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Files uploaded via the local server live only in <code className="font-mono">/uploads/</code> and do not persist on static GitHub Pages unless committed. Paste a permanent <code className="font-mono">https://</code> image URL here so it renders everywhere.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+          <input
+            type="url"
+            required
+            value={externalUrl}
+            onChange={(e) => setExternalUrl(e.target.value)}
+            placeholder="https://example.com/your-photo.jpg"
+            aria-label="External image URL"
+            className="sm:col-span-6 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
+          />
+          <input
+            type="text"
+            value={externalTitle}
+            onChange={(e) => setExternalTitle(e.target.value)}
+            placeholder="Title (optional)"
+            aria-label="External image title"
+            className="sm:col-span-4 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
+          />
+          <button
+            type="submit"
+            disabled={addingByUrl}
+            className="sm:col-span-2 px-4 py-2 rounded-lg bg-slate-900 dark:bg-blue-600 text-white text-xs font-medium hover:opacity-90 disabled:opacity-60"
+          >
+            {addingByUrl ? 'Adding...' : 'Add URL'}
+          </button>
+        </div>
+      </form>
+
       {/* Filter Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
@@ -442,8 +599,27 @@ export function MediaLibraryManager() {
                     )}
                     alt={asset.altText}
                     referrerPolicy="no-referrer"
+                    onLoad={() =>
+                      setBrokenAssetIds((prev) =>
+                        prev[asset.id] ? { ...prev, [asset.id]: false } : prev
+                      )
+                    }
+                    onError={() =>
+                      setBrokenAssetIds((prev) => ({ ...prev, [asset.id]: true }))
+                    }
                     className="w-full h-full object-cover"
                   />
+                  {brokenAssetIds[asset.id] && (
+                    <div className="absolute inset-0 bg-amber-950/85 text-amber-200 p-3 flex flex-col items-center justify-center text-center gap-1.5">
+                      <AlertTriangle className="w-5 h-5 text-amber-400" />
+                      <span className="text-[11px] font-medium leading-tight">
+                        File missing on this host
+                      </span>
+                      <span className="text-[10px] text-amber-300/90 leading-tight">
+                        Click Edit to set an https:// URL or Replace file
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
@@ -554,6 +730,18 @@ export function MediaLibraryManager() {
                 value={editCat}
                 onChange={(e) => setEditCat(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-sm"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Image URL (https:// or /uploads/...)</label>
+              <input
+                type="text"
+                required
+                value={editUrl}
+                onChange={(e) => setEditUrl(e.target.value)}
+                placeholder="https://example.com/photo.jpg"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs font-mono"
               />
             </div>
 

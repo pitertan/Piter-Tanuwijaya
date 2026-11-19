@@ -12,6 +12,8 @@ import {
   stripUndefinedKeys,
   isValidNavHref,
   getAnchorElementId,
+  validateMediaImageUrl,
+  formatFirebaseAuthError,
   MAX_MEDIA_SIZE_BYTES,
 } from './validation';
 import { DEFAULT_SEED_DATA } from './seedData';
@@ -143,4 +145,36 @@ test('isValidNavHref and getAnchorElementId prevent invalid CSS selector crashes
   assert.equal(getAnchorElementId('#projects'), 'projects');
   assert.equal(getAnchorElementId('#'), null);
   assert.equal(getAnchorElementId('https://example.com'), null);
+});
+
+test('validateMediaImageUrl validates external URLs and rejects data URIs or overlong strings', () => {
+  assert.equal(
+    validateMediaImageUrl('https://cdn.example.com/hero.webp').valid,
+    true
+  );
+  assert.equal(
+    validateMediaImageUrl('/src/assets/images/hero.jpg').valid,
+    true
+  );
+  assert.equal(
+    validateMediaImageUrl('data:image/png;base64,AAAA').valid,
+    false
+  );
+  assert.equal(
+    validateMediaImageUrl(`https://example.com/${'a'.repeat(600)}.jpg`).valid,
+    false
+  );
+  assert.equal(validateMediaImageUrl('javascript:alert(1)').valid, false);
+});
+
+test('formatFirebaseAuthError gives actionable domain guidance for auth/unauthorized-domain', () => {
+  const err = Object.assign(
+    new Error('Firebase: Error (auth/unauthorized-domain).'),
+    { code: 'auth/unauthorized-domain' }
+  );
+  const formatted = formatFirebaseAuthError(err, 'pitertan.github.io');
+  assert.equal(formatted.code, 'auth/unauthorized-domain');
+  assert.equal(formatted.unauthorizedDomain, 'pitertan.github.io');
+  assert.ok(formatted.message.includes('pitertan.github.io'));
+  assert.ok(formatted.message.includes('Authorized domains'));
 });

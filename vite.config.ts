@@ -33,6 +33,11 @@ export default defineConfig(() => {
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
           }
+          const uploadsDir = path.resolve(__dirname, 'uploads');
+          const distUploads = path.resolve(distDir, 'uploads');
+          if (fs.existsSync(distDir) && fs.existsSync(uploadsDir)) {
+            fs.cpSync(uploadsDir, distUploads, {recursive: true, force: true});
+          }
           const indexHtml = path.join(distDir, 'index.html');
           const notFoundHtml = path.join(distDir, '404.html');
           if (fs.existsSync(indexHtml)) {

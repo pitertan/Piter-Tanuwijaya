@@ -3,14 +3,14 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
+import {normalizeViteBase} from './src/lib/routing.ts';
 
 export default defineConfig(() => {
-  const ghRepo = process.env.GITHUB_REPOSITORY?.split('/')[1];
-  const base =
-    process.env.VITE_BASE_PATH ||
-    (process.env.GITHUB_ACTIONS === 'true' && ghRepo && !ghRepo.endsWith('.github.io')
-      ? `/${ghRepo}/`
-      : '/');
+  const base = normalizeViteBase(
+    process.env.VITE_BASE_PATH,
+    process.env.GITHUB_ACTIONS,
+    process.env.GITHUB_REPOSITORY
+  );
 
   return {
     base,
@@ -19,7 +19,7 @@ export default defineConfig(() => {
       tailwindcss(),
       // Copies src/assets into dist/ so root-relative URLs like
       // "/src/assets/images/..." (e.g. generate_image output) still resolve
-      // in production builds. Also generates dist/404.html for GitHub Pages SPA fallback.
+      // in production builds. Also generates dist/.nojekyll and dist/404.html for GitHub Pages SPA fallback.
       {
         name: 'copy-unbundled-src-assets',
         apply: 'build',
@@ -27,28 +27,42 @@ export default defineConfig(() => {
           if (error) {
             return;
           }
-          const distDir = path.resolve(__dirname, 'dist');
-          const srcAssets = path.resolve(__dirname, 'src/assets');
+          const rootDir = import.meta.dirname;
+          const distDir = path.resolve(rootDir, 'dist');
+          const srcAssets = path.resolve(rootDir, 'src/assets');
           const distAssets = path.resolve(distDir, 'src/assets');
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
           }
-          const uploadsDir = path.resolve(__dirname, 'uploads');
+          const uploadsDir = path.resolve(rootDir, 'uploads');
           const distUploads = path.resolve(distDir, 'uploads');
           if (fs.existsSync(distDir) && fs.existsSync(uploadsDir)) {
             fs.cpSync(uploadsDir, distUploads, {recursive: true, force: true});
           }
+          if (fs.existsSync(distDir)) {
+            fs.writeFileSync(path.join(distDir, '.nojekyll'), '');
+          }
           const indexHtml = path.join(distDir, 'index.html');
           const notFoundHtml = path.join(distDir, '404.html');
           if (fs.existsSync(indexHtml)) {
-            fs.copyFileSync(indexHtml, notFoundHtml);
+            if (base === './') {
+              const rawHtml = fs.readFileSync(indexHtml, 'utf8');
+              const redirectScript =
+                '<script>(function(){var p=window.location.pathname;if(/\\/admin(\\/.*)?$/i.test(p)){var b=p.replace(/\\/admin(\\/.*)?$/i,"/");window.location.replace(b+window.location.search+"#/admin");}})();</script>';
+              fs.writeFileSync(
+                notFoundHtml,
+                rawHtml.replace('<head>', `<head>${redirectScript}`)
+              );
+            } else {
+              fs.copyFileSync(indexHtml, notFoundHtml);
+            }
           }
         },
       },
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

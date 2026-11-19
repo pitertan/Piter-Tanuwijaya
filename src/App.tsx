@@ -17,7 +17,7 @@ import { PortfolioProvider } from './context/PortfolioContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
 import {
-  getRouterBasename,
+  getSafeBrowserBasename,
   isAdminPath,
   resolveHashAdminRedirect,
 } from './lib/routing';
@@ -52,7 +52,7 @@ function RouterEnhancements() {
 }
 
 export default function App() {
-  const routerBasename = getRouterBasename(
+  const routerBasename = getSafeBrowserBasename(
     import.meta.env.BASE_URL,
     typeof window !== 'undefined' ? window.location.pathname : '/',
     typeof window !== 'undefined' ? window.location.hostname : ''

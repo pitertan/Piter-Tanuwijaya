@@ -41,6 +41,31 @@ export function hasVisitedAdminSession(): boolean {
   }
 }
 
+export function normalizeViteBase(
+  rawBase?: string,
+  githubActions?: string,
+  githubRepository?: string
+): string {
+  const trimmed = rawBase?.trim();
+  if (trimmed) {
+    if (trimmed === '.' || trimmed === './') {
+      return './';
+    }
+    const collapsed = `/${trimmed}`.replace(/\/+/g, '/');
+    if (collapsed === '/') {
+      return '/';
+    }
+    return collapsed.endsWith('/') ? collapsed : `${collapsed}/`;
+  }
+
+  const ghRepo = githubRepository?.split('/')[1]?.trim();
+  if (githubActions === 'true' && ghRepo && !ghRepo.endsWith('.github.io')) {
+    return `/${ghRepo}/`;
+  }
+
+  return '/';
+}
+
 export function getRouterBasename(
   baseUrl = '/',
   pathname = '/',
@@ -55,6 +80,21 @@ export function getRouterBasename(
     if (firstSegment && firstSegment.toLowerCase() !== 'admin') {
       return `/${firstSegment}`;
     }
+  }
+  return '/';
+}
+
+export function getSafeBrowserBasename(
+  baseUrl = '/',
+  pathname = '/',
+  hostname = ''
+): string {
+  const candidate = getRouterBasename(baseUrl, pathname, hostname);
+  if (candidate === '/') return '/';
+  const lowerPath = pathname.toLowerCase();
+  const lowerBase = candidate.toLowerCase();
+  if (lowerPath === lowerBase || lowerPath.startsWith(`${lowerBase}/`)) {
+    return candidate;
   }
   return '/';
 }

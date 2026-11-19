@@ -20,8 +20,12 @@ export function ThemeProvider({
 }) {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
     if (typeof window !== 'undefined') {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved === 'dark' || saved === 'light') return saved;
+      try {
+        const saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved === 'dark' || saved === 'light') return saved;
+      } catch {
+        // Ignore storage errors in restricted contexts
+      }
     }
     return defaultTheme;
   });
@@ -33,7 +37,11 @@ export function ThemeProvider({
     } else {
       root.classList.remove('dark');
     }
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, theme);
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
   }, [theme]);
 
   const setTheme = (next: ThemeMode) => setThemeState(next);

@@ -215,7 +215,19 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
               setIsSeededInDb(seededVal);
             }
             setHasLiveSync(true);
-            setSnapshot((prev) => ({ ...prev, [key]: val }));
+            setSnapshot((prev) => {
+              const prevObj = prev[key];
+              const nextVal =
+                prevObj &&
+                typeof prevObj === 'object' &&
+                !Array.isArray(prevObj) &&
+                val &&
+                typeof val === 'object' &&
+                !Array.isArray(val)
+                  ? ({ ...prevObj, ...val } as PortfolioSnapshot[K])
+                  : val;
+              return { ...prev, [key]: nextVal };
+            });
           }
           markCriticalReady(key);
         },

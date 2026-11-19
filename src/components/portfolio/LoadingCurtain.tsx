@@ -12,7 +12,11 @@ export function LoadingCurtain({ brandName }: LoadingCurtainProps) {
     if (params.get('autostart') === '1') return false;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) return false;
-    if (window.sessionStorage.getItem('portfolio_intro_seen') === '1') return false;
+    try {
+      if (window.sessionStorage.getItem('portfolio_intro_seen') === '1') return false;
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
     return true;
   });
 
@@ -20,7 +24,11 @@ export function LoadingCurtain({ brandName }: LoadingCurtainProps) {
     if (!visible) return;
     const timer = window.setTimeout(() => {
       setVisible(false);
-      window.sessionStorage.setItem('portfolio_intro_seen', '1');
+      try {
+        window.sessionStorage.setItem('portfolio_intro_seen', '1');
+      } catch {
+        // Ignore storage errors in restricted contexts
+      }
     }, 850);
     return () => window.clearTimeout(timer);
   }, [visible]);

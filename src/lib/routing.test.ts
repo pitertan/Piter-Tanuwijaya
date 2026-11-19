@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getRouterBasename,
+  getSafeBrowserBasename,
   isAdminPath,
+  normalizeViteBase,
   resolveAssetUrl,
   resolveHashAdminRedirect,
   shouldShowCmsReturnControl,
@@ -57,12 +59,36 @@ test('shouldShowCmsReturnControl stays hidden for public visitors and shows for 
   );
 });
 
-test('getRouterBasename and resolveAssetUrl handle root and GitHub Pages subpaths', () => {
+test('normalizeViteBase resolves GitHub Pages project subpath, user site, custom domain, and relative builds', () => {
+  assert.equal(normalizeViteBase(undefined, 'true', 'pitertan/portfolio'), '/portfolio/');
+  assert.equal(normalizeViteBase(undefined, 'true', 'pitertan/pitertan.github.io'), '/');
+  assert.equal(normalizeViteBase('/', 'true', 'pitertan/portfolio'), '/');
+  assert.equal(normalizeViteBase('//', 'true', 'pitertan/portfolio'), '/');
+  assert.equal(normalizeViteBase('/portfolio', 'true', 'pitertan/portfolio'), '/portfolio/');
+  assert.equal(normalizeViteBase('portfolio', 'true', 'pitertan/portfolio'), '/portfolio/');
+  assert.equal(normalizeViteBase('./', undefined, undefined), './');
+  assert.equal(normalizeViteBase(undefined, undefined, undefined), '/');
+});
+
+test('getRouterBasename, getSafeBrowserBasename, and resolveAssetUrl handle root, custom domain, and GitHub Pages subpaths', () => {
   assert.equal(getRouterBasename('/'), '/');
   assert.equal(getRouterBasename('/my-portfolio/'), '/my-portfolio');
   assert.equal(
     getRouterBasename('./', '/my-portfolio/admin', 'user.github.io'),
     '/my-portfolio'
+  );
+  assert.equal(
+    getSafeBrowserBasename('/my-portfolio/', '/my-portfolio/', 'user.github.io'),
+    '/my-portfolio'
+  );
+  assert.equal(
+    getSafeBrowserBasename('/my-portfolio/', '/my-portfolio/admin', 'user.github.io'),
+    '/my-portfolio'
+  );
+  // Falls back safely to '/' instead of crashing BrowserRouter when hosted on a custom domain
+  assert.equal(
+    getSafeBrowserBasename('/my-portfolio/', '/', 'customdomain.com'),
+    '/'
   );
   assert.equal(
     resolveAssetUrl('/src/assets/images/hero.jpg', '/my-portfolio/'),

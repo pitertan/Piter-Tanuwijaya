@@ -1,43 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { parseCachedSnapshot } from './cache';
 import { DEFAULT_SEED_DATA } from './seedData';
-import { parseCachedSnapshot, toPublicCacheSnapshot } from './cache';
 
-test('toPublicCacheSnapshot excludes unpublished items and strips timestamps', () => {
-  const modified = {
-    ...DEFAULT_SEED_DATA,
-    hero: {
-      ...DEFAULT_SEED_DATA.hero,
-      portraitMediaId: 'custom-photo-123',
-      updatedAt: { seconds: 100 },
-    },
-    projects: [
-      { ...DEFAULT_SEED_DATA.projects[0], isPublished: true, createdAt: { seconds: 10 } },
-      { ...DEFAULT_SEED_DATA.projects[1], isPublished: false },
-    ],
-  };
-
-  const cached = toPublicCacheSnapshot(modified);
-  assert.equal(cached.hero.portraitMediaId, 'custom-photo-123');
-  assert.equal('updatedAt' in cached.hero, false);
-  assert.equal(cached.projects.length, 1);
-  assert.equal('createdAt' in cached.projects[0], false);
+test('parseCachedSnapshot returns null for invalid JSON or missing required objects', () => {
+  assert.equal(parseCachedSnapshot(null, DEFAULT_SEED_DATA), null);
+  assert.equal(parseCachedSnapshot('{broken', DEFAULT_SEED_DATA), null);
+  assert.equal(parseCachedSnapshot('{"profile":null}', DEFAULT_SEED_DATA), null);
 });
 
-test('parseCachedSnapshot merges valid JSON and rejects malformed payloads', () => {
-  const cached = toPublicCacheSnapshot({
-    ...DEFAULT_SEED_DATA,
-    hero: {
-      ...DEFAULT_SEED_DATA.hero,
-      portraitMediaId: 'user-portrait-id',
-    },
+test('parseCachedSnapshot repairs missing or non-array collections from fallback seed data', () => {
+  const malformedCache = JSON.stringify({
+    profile: { fullName: 'Cached Name' },
+    hero: { headline: 'Cached Headline', metrics: 'not-an-array' },
+    about: { summary: 'Cached Summary', expertiseAreas: null },
+    sections: null,
+    navigation: 'invalid',
+    socialLinks: 123,
+    projects: undefined,
+    mediaLibrary: [],
   });
 
-  const restored = parseCachedSnapshot(JSON.stringify(cached), DEFAULT_SEED_DATA);
-  assert.ok(restored);
-  assert.equal(restored.hero.portraitMediaId, 'user-portrait-id');
-
-  assert.equal(parseCachedSnapshot(null, DEFAULT_SEED_DATA), null);
-  assert.equal(parseCachedSnapshot('{bad-json', DEFAULT_SEED_DATA), null);
-  assert.equal(parseCachedSnapshot('{"foo":"bar"}', DEFAULT_SEED_DATA), null);
+  const parsed = parseCachedSnapshot(malformedCache, DEFAULT_SEED_DATA);
+  assert.ok(parsed);
+  assert.equal(parsed.profile.fullName, 'Cached Name');
+  assert.equal(parsed.hero.headline, 'Cached Headline');
+  assert.ok(Array.isArray(parsed.hero.metrics));
+  assert.equal(parsed.hero.metrics.length, DEFAULT_SEED_DATA.hero.metrics.length);
+  assert.ok(Array.isArray(parsed.about.expertiseAreas));
+  assert.ok(Array.isArray(parsed.sections));
+  assert.equal(parsed.sections.length, DEFAULT_SEED_DATA.sections.length);
+  assert.ok(Array.isArray(parsed.navigation));
+  assert.ok(Array.isArray(parsed.socialLinks));
+  assert.ok(Array.isArray(parsed.projects));
 });

@@ -857,22 +857,27 @@ export function MediaLibraryManager() {
         </div>
       </div>
 
-      {/* Media Grid */}
+      {/* Dynamic Masonry Media Gallery (matching Visual Archive layout) */}
       {filteredAssets.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F131A] p-12 text-center text-sm text-slate-500">
           No media assets match your current filters.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-5">
           {filteredAssets.map((asset) => {
             const refCount = findMediaReferences(asset.id, data).length;
             const isDriveStored = Boolean(extractDriveFileId(asset.url));
+            const isBroken = Boolean(brokenAssetIds[asset.id]);
             return (
               <div
                 key={asset.id}
-                className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F131A] overflow-hidden flex flex-col justify-between"
+                className="break-inside-avoid mb-5 group rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F131A] overflow-hidden shadow-xs hover:border-blue-500/50 transition-colors"
               >
-                <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-900">
+                <div
+                  className={`relative bg-slate-100 dark:bg-slate-900 overflow-hidden ${
+                    isBroken ? 'min-h-[160px]' : ''
+                  }`}
+                >
                   <img
                     src={resolveAssetUrl(
                       asset.thumbnailUrl || asset.url,
@@ -881,6 +886,8 @@ export function MediaLibraryManager() {
                       typeof window !== 'undefined' ? window.location.hostname : ''
                     )}
                     alt={asset.altText}
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     onLoad={() =>
                       setBrokenAssetIds((prev) =>
@@ -890,15 +897,17 @@ export function MediaLibraryManager() {
                     onError={() =>
                       setBrokenAssetIds((prev) => ({ ...prev, [asset.id]: true }))
                     }
-                    className="w-full h-full object-cover"
+                    className={`w-full h-auto block object-cover transition-transform duration-500 group-hover:scale-[1.02] ${
+                      isBroken ? 'hidden' : ''
+                    }`}
                   />
-                  {isDriveStored && !brokenAssetIds[asset.id] && (
-                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/65 backdrop-blur-sm text-[10px] font-medium text-white">
+                  {isDriveStored && !isBroken && (
+                    <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-black/65 backdrop-blur-sm text-[10px] font-medium text-white">
                       Google Drive
                     </span>
                   )}
-                  {brokenAssetIds[asset.id] && (
-                    <div className="absolute inset-0 bg-amber-950/85 text-amber-200 p-3 flex flex-col items-center justify-center text-center gap-1.5">
+                  {isBroken && (
+                    <div className="p-5 min-h-[160px] bg-amber-950/85 text-amber-200 flex flex-col items-center justify-center text-center gap-1.5">
                       <AlertTriangle className="w-5 h-5 text-amber-400" />
                       <span className="text-[11px] font-medium leading-tight">
                         File missing on this host
@@ -910,14 +919,16 @@ export function MediaLibraryManager() {
                   )}
                 </div>
 
-                <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
-                  <div className="space-y-1">
+                <div className="p-3.5 space-y-2.5">
+                  <div className="space-y-0.5">
                     <h4 className="text-sm font-display font-semibold truncate">
                       {asset.title}
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {asset.category} · {asset.width}×{asset.height} ·{' '}
-                      {Math.max(1, Math.round(asset.sizeBytes / 1024))} KB
+                      {asset.category} · {asset.width}×{asset.height}
+                      {asset.sizeBytes > 0
+                        ? ` · ${Math.max(1, Math.round(asset.sizeBytes / 1024))} KB`
+                        : ''}
                     </p>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       {refCount > 0

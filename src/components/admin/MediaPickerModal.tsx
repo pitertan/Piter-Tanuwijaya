@@ -100,7 +100,7 @@ export function MediaPickerModal({
               <p className="text-sm">No matching assets in Media Library.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            <div className="columns-2 sm:columns-3 md:columns-4 gap-4">
               {filtered.map((asset) => {
                 const isSelected = asset.id === selectedId;
                 return (
@@ -111,13 +111,13 @@ export function MediaPickerModal({
                       onSelect(asset.id);
                       onClose();
                     }}
-                    className={`group text-left rounded-xl border overflow-hidden transition-all ${
+                    className={`break-inside-avoid mb-4 w-full block group text-left rounded-xl border overflow-hidden transition-all ${
                       isSelected
                         ? 'border-blue-600 ring-2 ring-blue-500/30'
                         : 'border-slate-200 dark:border-slate-800 hover:border-blue-400'
                     }`}
                   >
-                    <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-900">
+                    <div className="relative bg-slate-100 dark:bg-slate-900">
                       <img
                         src={resolveAssetUrl(
                           asset.thumbnailUrl || asset.url,
@@ -126,8 +126,10 @@ export function MediaPickerModal({
                           typeof window !== 'undefined' ? window.location.hostname : ''
                         )}
                         alt={asset.altText}
+                        loading="lazy"
+                        decoding="async"
                         referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover"
+                        className="w-full h-auto block object-cover"
                       />
                       {isSelected && (
                         <span className="absolute top-2 right-2 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center">

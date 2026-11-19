@@ -14,6 +14,7 @@ import {
   getAnchorElementId,
   validateMediaImageUrl,
   formatFirebaseAuthError,
+  buildSocialLinkPayload,
   MAX_MEDIA_SIZE_BYTES,
 } from './validation';
 import { DEFAULT_SEED_DATA } from './seedData';
@@ -177,4 +178,52 @@ test('formatFirebaseAuthError gives actionable domain guidance for auth/unauthor
   assert.equal(formatted.unauthorizedDomain, 'pitertan.github.io');
   assert.ok(formatted.message.includes('pitertan.github.io'));
   assert.ok(formatted.message.includes('Authorized domains'));
+});
+
+test('buildSocialLinkPayload validates URLs, defaults label to platform, and clamps lengths', () => {
+  const emptyPlatform = buildSocialLinkPayload({
+    platform: '   ',
+    label: 'Handle',
+    url: 'https://github.com/pitertan',
+    isVisible: true,
+    sortOrder: 1,
+  });
+  assert.equal(emptyPlatform.valid, false);
+
+  const badUrl = buildSocialLinkPayload({
+    platform: 'GitHub',
+    label: '@pitertan',
+    url: 'javascript:alert(1)',
+    isVisible: true,
+    sortOrder: 1,
+  });
+  assert.equal(badUrl.valid, false);
+
+  const edited = buildSocialLinkPayload({
+    platform: '  LinkedIn  ',
+    label: '',
+    url: '  https://linkedin.com/in/pitertanuwijaya  ',
+    isVisible: false,
+    sortOrder: 2.6,
+  });
+  assert.equal(edited.valid, true);
+  assert.deepEqual(edited.data, {
+    platform: 'LinkedIn',
+    label: 'LinkedIn',
+    url: 'https://linkedin.com/in/pitertanuwijaya',
+    isVisible: false,
+    sortOrder: 3,
+  });
+
+  const oversized = buildSocialLinkPayload({
+    platform: 'X'.repeat(90),
+    label: 'Y'.repeat(120),
+    url: `https://example.com/${'a'.repeat(420)}`,
+    isVisible: true,
+    sortOrder: 1,
+  });
+  assert.equal(oversized.valid, true);
+  assert.equal(oversized.data?.platform.length, 60);
+  assert.equal(oversized.data?.label.length, 80);
+  assert.equal(oversized.data?.url.length, 400);
 });

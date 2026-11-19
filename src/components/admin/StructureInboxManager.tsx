@@ -2,16 +2,23 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  Check,
+  Edit3,
   Eye,
   EyeOff,
   Mail,
   Plus,
   Save,
   Trash2,
+  X,
 } from 'lucide-react';
 import { usePortfolio } from '../../context/PortfolioContext';
 import { useToast } from '../../context/ToastContext';
-import { clampString, isValidNavHref } from '../../lib/validation';
+import {
+  buildSocialLinkPayload,
+  clampString,
+  isValidNavHref,
+} from '../../lib/validation';
 import type {
   ContactInformation,
   ContactMessage,
@@ -604,9 +611,20 @@ export function FooterSocialManager() {
   const [label, setLabel] = useState('');
   const [url, setUrl] = useState('');
 
+  const [editingSocialId, setEditingSocialId] = useState<string | null>(null);
+  const [editPlatform, setEditPlatform] = useState('');
+  const [editLabel, setEditLabel] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+  const [editVisible, setEditVisible] = useState(true);
+  const [savingSocialId, setSavingSocialId] = useState<string | null>(null);
+
   useEffect(() => {
     setFooter(data.footer);
   }, [data.footer]);
+
+  const socialLinks = [...data.socialLinks].sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+  );
 
   const handleSaveFooter = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -633,8 +651,15 @@ export function FooterSocialManager() {
 
   const handleAddSocial = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!platform.trim() || !url.trim()) {
-      showToast('Platform and URL are required.', 'error');
+    const validated = buildSocialLinkPayload({
+      platform,
+      label,
+      url,
+      isVisible: true,
+      sortOrder: socialLinks.length + 1,
+    });
+    if (!validated.valid || !validated.data) {
+      showToast(validated.error || 'Platform and URL are required.', 'error');
       return;
     }
     const id = `soc-${Date.now()}`;
@@ -642,15 +667,9 @@ export function FooterSocialManager() {
       await upsertDocument<Omit<SocialLink, 'id'>>(
         'social_links',
         id,
-        {
-          platform: clampString(platform, 60),
-          label: clampString(label || platform, 80),
-          url: clampString(url, 400),
-          isVisible: true,
-          sortOrder: data.socialLinks.length + 1,
-        },
+        validated.data,
         true,
-        `Added social link "${platform.trim()}"`
+        `Added social link "${validated.data.platform}"`
       );
       setPlatform('');
       setLabel('');
@@ -658,6 +677,79 @@ export function FooterSocialManager() {
       showToast('Social link added', 'success');
     } catch {
       showToast('Failed to add social link', 'error');
+    }
+  };
+
+  const startEditSocial = (soc: SocialLink) => {
+    setEditingSocialId(soc.id);
+    setEditPlatform(soc.platform);
+    setEditLabel(soc.label);
+    setEditUrl(soc.url);
+    setEditVisible(soc.isVisible);
+  };
+
+  const cancelEditSocial = () => {
+    setEditingSocialId(null);
+    setEditPlatform('');
+    setEditLabel('');
+    setEditUrl('');
+    setEditVisible(true);
+  };
+
+  const handleSaveEditSocial = async (e: React.FormEvent, soc: SocialLink) => {
+    e.preventDefault();
+    const validated = buildSocialLinkPayload({
+      platform: editPlatform,
+      label: editLabel,
+      url: editUrl,
+      isVisible: editVisible,
+      sortOrder: soc.sortOrder ?? 0,
+    });
+    if (!validated.valid || !validated.data) {
+      showToast(validated.error || 'Please check the social link fields.', 'error');
+      return;
+    }
+    setSavingSocialId(soc.id);
+    try {
+      await upsertDocument<Omit<SocialLink, 'id'>>(
+        'social_links',
+        soc.id,
+        validated.data,
+        false,
+        `Updated social link "${validated.data.platform}"`
+      );
+      cancelEditSocial();
+      showToast('Social link updated', 'success');
+    } catch {
+      showToast('Failed to update social link', 'error');
+    } finally {
+      setSavingSocialId(null);
+    }
+  };
+
+  const handleToggleSocialVisibility = async (soc: SocialLink) => {
+    const validated = buildSocialLinkPayload({
+      platform: soc.platform,
+      label: soc.label,
+      url: soc.url,
+      isVisible: !soc.isVisible,
+      sortOrder: soc.sortOrder ?? 0,
+    });
+    if (!validated.valid || !validated.data) return;
+    try {
+      await upsertDocument<Omit<SocialLink, 'id'>>(
+        'social_links',
+        soc.id,
+        validated.data,
+        false,
+        `Toggled visibility for social link "${soc.platform}"`
+      );
+      showToast(
+        validated.data.isVisible ? 'Social link shown' : 'Social link hidden',
+        'info'
+      );
+    } catch {
+      showToast('Failed to update social link visibility', 'error');
     }
   };
 
@@ -736,44 +828,162 @@ export function FooterSocialManager() {
           />
           <button
             type="submit"
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium"
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 transition-colors"
           >
             Add Social Link
           </button>
         </form>
 
         <div className="space-y-2">
-          {data.socialLinks.map((soc) => (
-            <div
-              key={soc.id}
-              className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs"
-            >
-              <div>
-                <span className="font-semibold">{soc.platform}</span>{' '}
-                <span className="text-slate-500">· {soc.url}</span>
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await deleteDocument(
-                      'social_links',
-                      soc.id,
-                      `Deleted social link "${soc.platform}"`
-                    );
-                    showToast('Social link deleted', 'success');
-                  } catch {
-                    showToast('Failed to delete social link', 'error');
-                  }
-                }}
-                className="p-1.5 text-rose-500"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
+          {socialLinks.length === 0 ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400 py-4 text-center">
+              No social links added yet.
+            </p>
+          ) : (
+            socialLinks.map((soc) => {
+              const isEditing = editingSocialId === soc.id;
+              const isSaving = savingSocialId === soc.id;
+
+              return (
+                <div
+                  key={soc.id}
+                  className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-xs"
+                >
+                  {isEditing ? (
+                    <form
+                      onSubmit={(e) => handleSaveEditSocial(e, soc)}
+                      className="space-y-3"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <input
+                          type="text"
+                          required
+                          aria-label={`Platform for ${soc.platform}`}
+                          placeholder="Platform (GitHub)"
+                          value={editPlatform}
+                          onChange={(e) => setEditPlatform(e.target.value)}
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
+                        />
+                        <input
+                          type="text"
+                          aria-label={`Handle or label for ${soc.platform}`}
+                          placeholder="Handle / Label"
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
+                        />
+                        <input
+                          type="url"
+                          required
+                          aria-label={`URL for ${soc.platform}`}
+                          placeholder="https://..."
+                          value={editUrl}
+                          onChange={(e) => setEditUrl(e.target.value)}
+                          className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
+                        />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={editVisible}
+                            onChange={(e) => setEditVisible(e.target.checked)}
+                          />
+                          <span>Visible on portfolio</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={cancelEditSocial}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Cancel</span>
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isSaving}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-500 disabled:opacity-60"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{isSaving ? 'Saving...' : 'Save'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="font-semibold">{soc.platform}</span>
+                        {soc.label && soc.label !== soc.platform && (
+                          <span className="text-slate-500 dark:text-slate-400">
+                            ({soc.label})
+                          </span>
+                        )}
+                        <span className="text-slate-500 truncate">· {soc.url}</span>
+                        {!soc.isVisible && (
+                          <span className="text-[11px] font-mono text-amber-600 dark:text-amber-400">
+                            · Hidden
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSocialVisibility(soc)}
+                          aria-label={
+                            soc.isVisible
+                              ? `Hide ${soc.platform}`
+                              : `Show ${soc.platform}`
+                          }
+                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        >
+                          {soc.isVisible ? (
+                            <Eye className="w-3.5 h-3.5 text-emerald-500" />
+                          ) : (
+                            <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startEditSocial(soc)}
+                          aria-label={`Edit social link ${soc.platform}`}
+                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await deleteDocument(
+                                'social_links',
+                                soc.id,
+                                `Deleted social link "${soc.platform}"`
+                              );
+                              if (editingSocialId === soc.id) {
+                                cancelEditSocial();
+                              }
+                              showToast('Social link deleted', 'success');
+                            } catch {
+                              showToast('Failed to delete social link', 'error');
+                            }
+                          }}
+                          aria-label={`Delete social link ${soc.platform}`}
+                          className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 text-rose-500 hover:bg-rose-500/10"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>
   );
 }
+

@@ -438,3 +438,67 @@ export function formatFirebaseAuthError(
   };
 }
 
+export interface SocialLinkInput {
+  platform: string;
+  label?: string;
+  url: string;
+  isVisible: boolean;
+  sortOrder: number;
+}
+
+export function buildSocialLinkPayload(input: SocialLinkInput): {
+  valid: boolean;
+  data?: {
+    platform: string;
+    label: string;
+    url: string;
+    isVisible: boolean;
+    sortOrder: number;
+  };
+  error?: string;
+} {
+  const platform = clampString(input.platform || '', 60);
+  if (!platform) {
+    return { valid: false, error: 'Platform name is required.' };
+  }
+
+  const url = clampString(input.url || '', 400);
+  if (!url) {
+    return { valid: false, error: 'Social link URL is required.' };
+  }
+
+  let isAllowedProtocol = false;
+  try {
+    const parsed = new URL(url);
+    isAllowedProtocol =
+      parsed.protocol === 'https:' ||
+      parsed.protocol === 'http:' ||
+      parsed.protocol === 'mailto:';
+  } catch {
+    isAllowedProtocol = false;
+  }
+
+  if (!isAllowedProtocol) {
+    return {
+      valid: false,
+      error: 'Please enter a valid URL starting with https://, http://, or mailto:.',
+    };
+  }
+
+  const rawLabel = input.label && input.label.trim() ? input.label : platform;
+  const label = clampString(rawLabel, 80);
+  const sortOrder = Number.isFinite(input.sortOrder)
+    ? Math.round(input.sortOrder)
+    : 0;
+
+  return {
+    valid: true,
+    data: {
+      platform,
+      label,
+      url,
+      isVisible: Boolean(input.isVisible),
+      sortOrder,
+    },
+  };
+}

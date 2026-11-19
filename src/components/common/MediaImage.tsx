@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ImageOff } from 'lucide-react';
 import { usePortfolio } from '../../context/PortfolioContext';
+import { getDriveFallbackImageUrl } from '../../lib/googleDrive';
 import { resolveAssetUrl } from '../../lib/routing';
 
 interface MediaImageProps {
@@ -23,18 +24,22 @@ export function MediaImage({
   const { resolveMedia } = usePortfolio();
   const asset = resolveMedia(mediaId);
   const [failed, setFailed] = useState(false);
+  const [usedFallback, setUsedFallback] = useState(false);
 
   const rawSrc = useThumbnail ? asset?.thumbnailUrl || asset?.url : asset?.url;
-  const src = resolveAssetUrl(
+  const primarySrc = resolveAssetUrl(
     rawSrc,
     import.meta.env.BASE_URL,
     typeof window !== 'undefined' ? window.location.pathname : '/',
     typeof window !== 'undefined' ? window.location.hostname : ''
   );
+  const fallbackSrc = getDriveFallbackImageUrl(primarySrc);
+  const src = usedFallback && fallbackSrc ? fallbackSrc : primarySrc;
 
   useEffect(() => {
     setFailed(false);
-  }, [src]);
+    setUsedFallback(false);
+  }, [primarySrc]);
 
   if (!asset || !src || failed) {
     return (
@@ -59,7 +64,13 @@ export function MediaImage({
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
         referrerPolicy="no-referrer"
-        onError={() => setFailed(true)}
+        onError={() => {
+          if (!usedFallback && fallbackSrc && fallbackSrc !== primarySrc) {
+            setUsedFallback(true);
+          } else {
+            setFailed(true);
+          }
+        }}
         className={imgClassName}
       />
     </div>

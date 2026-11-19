@@ -6,7 +6,26 @@ import firebaseConfig from '../../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+export const WORKSPACE_SCOPES = [
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/drive.activity',
+  'https://www.googleapis.com/auth/drive.activity.readonly',
+  'https://www.googleapis.com/auth/drive.appdata',
+  'https://www.googleapis.com/auth/drive.apps.readonly',
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.install',
+  'https://www.googleapis.com/auth/drive.meet.readonly',
+  'https://www.googleapis.com/auth/drive.metadata',
+  'https://www.googleapis.com/auth/drive.metadata.readonly',
+  'https://www.googleapis.com/auth/drive.photos.readonly',
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/drive.scripts',
+] as const;
+
 export const googleAuthProvider = new GoogleAuthProvider();
+for (const scope of WORKSPACE_SCOPES) {
+  googleAuthProvider.addScope(scope);
+}
 
 export const BOOTSTRAPPED_ADMIN_EMAIL = 'pitertan0120@gmail.com';
 

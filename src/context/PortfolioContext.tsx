@@ -22,6 +22,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import {
+  GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
   signOut,
@@ -57,11 +58,14 @@ interface PortfolioContextValue {
   isAdmin: boolean;
   isBootstrappedAdmin: boolean;
   adminRole: 'super_admin' | 'editor' | null;
+  driveAccessToken: string | null;
   contactMessages: ContactMessage[];
   activityLogs: ActivityLog[];
   adminUsers: AdminUser[];
   resolveMedia: (mediaId: string | undefined) => MediaAsset | undefined;
   signInWithGoogle: () => Promise<void>;
+  connectGoogleDrive: () => Promise<string | null>;
+  clearDriveAccessToken: () => void;
   logoutAdmin: () => Promise<void>;
   seedDatabase: () => Promise<void>;
   saveSingleton: <T extends Record<string, unknown>>(
@@ -108,10 +112,16 @@ function sortByOrder<T extends { sortOrder?: number }>(items: T[]): T[] {
   return [...items].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 }
 
+// In-memory cache only for Google Workspace OAuth access token (never localStorage/sessionStorage)
+let cachedDriveAccessToken: string | null = null;
+
 export function PortfolioProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [adminDoc, setAdminDoc] = useState<AdminUser | null>(null);
+  const [driveAccessToken, setDriveAccessToken] = useState<string | null>(
+    () => cachedDriveAccessToken
+  );
 
   const [cachedInitial] = useState<PortfolioSnapshot | null>(() =>
     loadCachedSnapshot(DEFAULT_SEED_DATA)
@@ -147,6 +157,8 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
           setAdminDoc(null);
         }
       } else {
+        cachedDriveAccessToken = null;
+        setDriveAccessToken(null);
         setAdminDoc(null);
       }
       setAuthReady(true);
@@ -382,11 +394,29 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const signInWithGoogle = useCallback(async () => {
-    await signInWithPopup(auth, googleAuthProvider);
+  const clearDriveAccessToken = useCallback(() => {
+    cachedDriveAccessToken = null;
+    setDriveAccessToken(null);
   }, []);
 
+  const connectGoogleDrive = useCallback(async (): Promise<string | null> => {
+    const result = await signInWithPopup(auth, googleAuthProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const token = credential?.accessToken ?? null;
+    if (token) {
+      cachedDriveAccessToken = token;
+      setDriveAccessToken(token);
+    }
+    return token;
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    await connectGoogleDrive();
+  }, [connectGoogleDrive]);
+
   const logoutAdmin = useCallback(async () => {
+    cachedDriveAccessToken = null;
+    setDriveAccessToken(null);
     await signOut(auth);
   }, []);
 
@@ -674,11 +704,14 @@ export function PortfolioProvider({ children }: { children: React.ReactNode }) {
         isAdmin,
         isBootstrappedAdmin,
         adminRole,
+        driveAccessToken,
         contactMessages,
         activityLogs,
         adminUsers,
         resolveMedia,
         signInWithGoogle,
+        connectGoogleDrive,
+        clearDriveAccessToken,
         logoutAdmin,
         seedDatabase,
         saveSingleton,

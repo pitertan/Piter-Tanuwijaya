@@ -1,7 +1,11 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  CheckCircle2,
   Edit3,
+  ExternalLink,
+  FolderOpen,
+  FolderSync,
   ImagePlus,
   Link2,
   RefreshCw,
@@ -13,6 +17,18 @@ import {
 import { usePortfolio } from '../../context/PortfolioContext';
 import { useToast } from '../../context/ToastContext';
 import { auth } from '../../lib/firebase';
+import {
+  deleteDriveFile,
+  DriveAuthExpiredError,
+  type DriveFolderInfo,
+  type DriveListedImage,
+  ensureDriveFilePublicReadable,
+  ensurePortfolioDriveFolder,
+  extractDriveFileId,
+  listDriveFolderImages,
+  PORTFOLIO_DRIVE_FOLDER_NAME,
+  uploadImageToDriveFolder,
+} from '../../lib/googleDrive';
 import { resolveAssetUrl } from '../../lib/routing';
 import {
   findMediaReferences,
@@ -22,6 +38,30 @@ import {
 } from '../../lib/validation';
 import type { AllowedMediaMime, MediaAsset } from '../../types/portfolio';
 import { ConfirmDialog } from '../common/ConfirmDialog';
+
+async function probeImageFileDimensions(file: File): Promise<{
+  width: number;
+  height: number;
+}> {
+  if (file.type === 'image/svg+xml') {
+    return { width: 800, height: 600 };
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const width = img.naturalWidth || 1200;
+      const height = img.naturalHeight || 800;
+      URL.revokeObjectURL(url);
+      resolve({ width, height });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: 1200, height: 800 });
+    };
+    img.src = url;
+  });
+}
 
 async function probeImageUrlDimensions(
   url: string
@@ -42,58 +82,26 @@ async function probeImageUrlDimensions(
   });
 }
 
-async function generateImageMetadataAndThumbnail(file: File): Promise<{
-  width: number;
-  height: number;
-  thumbnailBlob: Blob | null;
-}> {
-  if (file.type === 'image/svg+xml') {
-    return { width: 800, height: 600, thumbnailBlob: null };
-  }
-
-  return new Promise((resolve) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const width = img.naturalWidth || 800;
-      const height = img.naturalHeight || 600;
-      const maxDim = 480;
-      const scale = Math.min(1, maxDim / Math.max(width, height));
-      const tw = Math.max(1, Math.round(width * scale));
-      const th = Math.max(1, Math.round(height * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = tw;
-      canvas.height = th;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        URL.revokeObjectURL(url);
-        resolve({ width, height, thumbnailBlob: null });
-        return;
-      }
-      ctx.drawImage(img, 0, 0, tw, th);
-      canvas.toBlob(
-        (blob) => {
-          URL.revokeObjectURL(url);
-          resolve({ width, height, thumbnailBlob: blob });
-        },
-        'image/webp',
-        0.82
-      );
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve({ width: 800, height: 600, thumbnailBlob: null });
-    };
-    img.src = url;
-  });
-}
-
 export function MediaLibraryManager() {
-  const { data, upsertDocument, deleteDocument } = usePortfolio();
+  const {
+    data,
+    driveAccessToken,
+    connectGoogleDrive,
+    clearDriveAccessToken,
+    upsertDocument,
+    deleteDocument,
+  } = usePortfolio();
   const { showToast } = useToast();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+
+  const [driveFolder, setDriveFolder] = useState<DriveFolderInfo | null>(null);
+  const [connectingDrive, setConnectingDrive] = useState(false);
+  const [syncingDrive, setSyncingDrive] = useState(false);
+  const [pendingSyncImages, setPendingSyncImages] = useState<DriveListedImage[] | null>(
+    null
+  );
 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -112,11 +120,37 @@ export function MediaLibraryManager() {
   const [externalUrl, setExternalUrl] = useState('');
   const [externalTitle, setExternalTitle] = useState('');
   const [addingByUrl, setAddingByUrl] = useState(false);
+  const [showUrlSection, setShowUrlSection] = useState(false);
   const [brokenAssetIds, setBrokenAssetIds] = useState<Record<string, boolean>>({});
 
+  const [pendingReplaceConfirm, setPendingReplaceConfirm] = useState<MediaAsset | null>(
+    null
+  );
   const [replacingAsset, setReplacingAsset] = useState<MediaAsset | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MediaAsset | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Automatically resolve the dedicated portfolio folder once Drive token is in memory
+  useEffect(() => {
+    let active = true;
+    if (!driveAccessToken) {
+      setDriveFolder(null);
+      return;
+    }
+    ensurePortfolioDriveFolder(driveAccessToken)
+      .then((folder) => {
+        if (active) setDriveFolder(folder);
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err instanceof DriveAuthExpiredError) {
+          clearDriveAccessToken();
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [driveAccessToken, clearDriveAccessToken]);
 
   const orphanedIds = useMemo(() => {
     return new Set(findOrphanedMedia(data.mediaLibrary, data).map((m) => m.id));
@@ -142,16 +176,56 @@ export function MediaLibraryManager() {
     });
   }, [data.mediaLibrary, orphansOnly, orphanedIds, categoryFilter, searchQuery]);
 
-  const handleUploadFiles = async (files: FileList | null, replaceExisting?: MediaAsset) => {
+  const handleConnectDrive = async (): Promise<string | null> => {
+    setConnectingDrive(true);
+    try {
+      const token = await connectGoogleDrive();
+      if (!token) {
+        showToast(
+          'Google Drive token missing',
+          'error',
+          'Please authorize Google Drive access in the Google sign-in popup.'
+        );
+        return null;
+      }
+      const folder = await ensurePortfolioDriveFolder(token);
+      setDriveFolder(folder);
+      showToast('Google Drive connected', 'success', `Folder "${folder.name}" ready`);
+      return token;
+    } catch (err) {
+      showToast(
+        'Failed to connect Google Drive',
+        'error',
+        err instanceof Error ? err.message : undefined
+      );
+      return null;
+    } finally {
+      setConnectingDrive(false);
+    }
+  };
+
+  const handleUploadFiles = async (
+    files: FileList | null,
+    replaceExisting?: MediaAsset,
+    overrideToken?: string | null
+  ) => {
     if (!files || files.length === 0) return;
-    const token = await auth.currentUser?.getIdToken();
+
+    const token = overrideToken ?? driveAccessToken;
     if (!token) {
-      showToast('Authentication token missing', 'error');
+      showToast(
+        'Connect Google Drive first',
+        'error',
+        'Click "Connect Google Drive" so uploads save directly to your portfolio Drive folder.'
+      );
       return;
     }
 
     setUploading(true);
     try {
+      const folder = driveFolder || (await ensurePortfolioDriveFolder(token));
+      setDriveFolder(folder);
+
       for (const file of Array.from(files)) {
         const check = validateMediaFile(file.type, file.size);
         if (!check.valid) {
@@ -159,36 +233,29 @@ export function MediaLibraryManager() {
           continue;
         }
 
-        const { width, height, thumbnailBlob } = await generateImageMetadataAndThumbnail(file);
-        const formData = new FormData();
-        formData.append('file', file);
-        if (thumbnailBlob) {
-          formData.append('thumbnail', thumbnailBlob, 'thumb.webp');
-        }
+        const { width, height } = await probeImageFileDimensions(file);
+        const cleanTitle =
+          file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() ||
+          'Portfolio Image';
 
-        const resp = await fetch('/api/media/upload', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
+        const uploaded = await uploadImageToDriveFolder({
+          accessToken: token,
+          folderId: folder.id,
+          file,
+          width,
+          height,
+          title: replaceExisting ? replaceExisting.title : cleanTitle,
         });
 
-        const contentType = resp.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          showToast(
-            'Upload server unavailable here',
-            'error',
-            'Static hosting (GitHub Pages) has no upload backend. Use "Add Image via URL" below instead.'
-          );
-          break;
-        }
-
-        const payload = await resp.json();
-        if (!resp.ok) {
-          showToast(payload.error || 'Upload failed', 'error', file.name);
-          continue;
-        }
-
         if (replaceExisting) {
+          const oldDriveId = extractDriveFileId(replaceExisting.url);
+          if (oldDriveId && oldDriveId !== uploaded.fileId) {
+            try {
+              await deleteDriveFile(token, oldDriveId);
+            } catch {
+              // Non-fatal if old file was already removed from Drive
+            }
+          }
           await upsertDocument(
             'media_library',
             replaceExisting.id,
@@ -197,24 +264,23 @@ export function MediaLibraryManager() {
               altText: replaceExisting.altText,
               description: replaceExisting.description || '',
               category: replaceExisting.category || 'General',
-              url: payload.url,
-              thumbnailUrl: payload.thumbnailUrl,
-              mimeType: payload.mimeType as AllowedMediaMime,
-              sizeBytes: Math.round(payload.sizeBytes),
-              width: Math.round(width),
-              height: Math.round(height),
-              filename: payload.filename,
+              url: uploaded.url,
+              thumbnailUrl: uploaded.thumbnailUrl,
+              mimeType: uploaded.mimeType,
+              sizeBytes: Math.round(uploaded.sizeBytes),
+              width: Math.round(uploaded.width),
+              height: Math.round(uploaded.height),
+              filename: uploaded.name.slice(0, 200),
               createdBy: replaceExisting.createdBy || auth.currentUser?.uid || 'admin',
             },
             false,
-            `Replaced media file for "${replaceExisting.title}"`,
+            `Replaced Google Drive media file for "${replaceExisting.title}"`,
             true
           );
-          showToast('Image replaced', 'success', replaceExisting.title);
+          setBrokenAssetIds((prev) => ({ ...prev, [replaceExisting.id]: false }));
+          showToast('Image replaced in Google Drive', 'success', replaceExisting.title);
         } else {
           const mediaId = `media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          const cleanTitle =
-            file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() || 'Uploaded Image';
           await upsertDocument(
             'media_library',
             mediaId,
@@ -223,33 +289,144 @@ export function MediaLibraryManager() {
               altText: cleanTitle.slice(0, 300),
               description: '',
               category: uploadCategory,
-              url: payload.url,
-              thumbnailUrl: payload.thumbnailUrl,
-              mimeType: payload.mimeType as AllowedMediaMime,
-              sizeBytes: Math.round(payload.sizeBytes),
-              width: Math.round(width),
-              height: Math.round(height),
-              filename: payload.filename,
+              url: uploaded.url,
+              thumbnailUrl: uploaded.thumbnailUrl,
+              mimeType: uploaded.mimeType,
+              sizeBytes: Math.round(uploaded.sizeBytes),
+              width: Math.round(uploaded.width),
+              height: Math.round(uploaded.height),
+              filename: uploaded.name.slice(0, 200),
               createdBy: auth.currentUser?.uid || 'admin',
             },
             true,
-            `Uploaded media asset "${cleanTitle}"`,
+            `Uploaded "${cleanTitle}" to Google Drive folder`,
             true
           );
-          showToast('Uploaded image', 'success', cleanTitle);
+          showToast('Uploaded to Google Drive', 'success', cleanTitle);
         }
       }
     } catch (err) {
-      showToast(
-        'Upload error',
-        'error',
-        err instanceof Error ? err.message : 'Unable to upload file.'
-      );
+      if (err instanceof DriveAuthExpiredError) {
+        clearDriveAccessToken();
+        showToast('Google Drive session expired', 'error', 'Click "Connect Google Drive" and try again.');
+      } else {
+        showToast(
+          'Google Drive upload error',
+          'error',
+          err instanceof Error ? err.message : 'Unable to upload file to Google Drive.'
+        );
+      }
     } finally {
       setUploading(false);
       setReplacingAsset(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       if (replaceInputRef.current) replaceInputRef.current.value = '';
+    }
+  };
+
+  const handleSelectFilesClick = async () => {
+    if (!driveAccessToken) {
+      const token = await handleConnectDrive();
+      if (!token) return;
+      fileInputRef.current?.click();
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleCheckSyncFromDrive = async () => {
+    let token = driveAccessToken;
+    if (!token) {
+      token = await handleConnectDrive();
+      if (!token) return;
+    }
+
+    setSyncingDrive(true);
+    try {
+      const folder = driveFolder || (await ensurePortfolioDriveFolder(token));
+      setDriveFolder(folder);
+      const files = await listDriveFolderImages(token, folder.id);
+      const existingDriveIds = new Set(
+        data.mediaLibrary
+          .map((m) => extractDriveFileId(m.url))
+          .filter((id): id is string => Boolean(id))
+      );
+      const unlinked = files.filter((f) => !existingDriveIds.has(f.id));
+      if (unlinked.length === 0) {
+        showToast('Already up to date', 'info', 'All images in your Drive folder are already in the Media Library.');
+        return;
+      }
+      setPendingSyncImages(unlinked);
+    } catch (err) {
+      if (err instanceof DriveAuthExpiredError) {
+        clearDriveAccessToken();
+        showToast('Google Drive session expired', 'error', 'Please reconnect Google Drive.');
+      } else {
+        showToast(
+          'Failed to scan Drive folder',
+          'error',
+          err instanceof Error ? err.message : undefined
+        );
+      }
+    } finally {
+      setSyncingDrive(false);
+    }
+  };
+
+  const handleConfirmSyncImport = async () => {
+    if (!pendingSyncImages || pendingSyncImages.length === 0) return;
+    const token = driveAccessToken;
+    if (!token) {
+      setPendingSyncImages(null);
+      showToast('Connect Google Drive first', 'error');
+      return;
+    }
+
+    setSyncingDrive(true);
+    try {
+      let imported = 0;
+      for (const item of pendingSyncImages) {
+        await ensureDriveFilePublicReadable(token, item.id);
+        const cleanTitle =
+          item.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim() ||
+          'Drive Image';
+        const mediaId = `media-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        await upsertDocument(
+          'media_library',
+          mediaId,
+          {
+            title: cleanTitle.slice(0, 160),
+            altText: cleanTitle.slice(0, 300),
+            description: '',
+            category: uploadCategory,
+            url: item.url,
+            thumbnailUrl: item.thumbnailUrl,
+            mimeType: item.mimeType,
+            sizeBytes: Math.round(item.sizeBytes),
+            width: Math.round(item.width),
+            height: Math.round(item.height),
+            filename: item.name.slice(0, 200),
+            createdBy: auth.currentUser?.uid || 'admin',
+          },
+          true,
+          `Imported "${cleanTitle}" from Google Drive folder`,
+          true
+        );
+        imported += 1;
+      }
+      showToast(`Imported ${imported} image(s) from Google Drive`, 'success');
+      setPendingSyncImages(null);
+    } catch (err) {
+      if (err instanceof DriveAuthExpiredError) {
+        clearDriveAccessToken();
+      }
+      showToast(
+        'Sync import failed',
+        'error',
+        err instanceof Error ? err.message : undefined
+      );
+    } finally {
+      setSyncingDrive(false);
     }
   };
 
@@ -393,14 +570,27 @@ export function MediaLibraryManager() {
       return;
     }
 
+    const driveId = extractDriveFileId(deleteTarget.url);
+    let token = driveAccessToken;
+    if (driveId && !token) {
+      token = await handleConnectDrive();
+      if (!token) {
+        return;
+      }
+    }
+
     setDeleting(true);
     try {
-      const token = await auth.currentUser?.getIdToken();
-      if (token && deleteTarget.url.startsWith('/uploads/')) {
-        await fetch(`/api/media/file/${encodeURIComponent(deleteTarget.filename)}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        });
+      if (driveId && token) {
+        await deleteDriveFile(token, driveId);
+      } else {
+        const fbToken = await auth.currentUser?.getIdToken();
+        if (fbToken && deleteTarget.url.startsWith('/uploads/')) {
+          await fetch(`/api/media/file/${encodeURIComponent(deleteTarget.filename)}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${fbToken}` },
+          }).catch(() => undefined);
+        }
       }
       await deleteDocument(
         'media_library',
@@ -409,8 +599,13 @@ export function MediaLibraryManager() {
       );
       showToast('Media deleted', 'success');
       setDeleteTarget(null);
-    } catch {
-      showToast('Delete failed', 'error');
+    } catch (err) {
+      if (err instanceof DriveAuthExpiredError) {
+        clearDriveAccessToken();
+        showToast('Google Drive session expired', 'error', 'Please reconnect Google Drive and try again.');
+      } else {
+        showToast('Delete failed', 'error', err instanceof Error ? err.message : undefined);
+      }
     } finally {
       setDeleting(false);
     }
@@ -418,6 +613,80 @@ export function MediaLibraryManager() {
 
   return (
     <div className="space-y-6">
+      {/* Dedicated Google Drive Folder Status Banner */}
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F131A] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+              driveAccessToken
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+            }`}
+          >
+            <FolderOpen className="w-5 h-5" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-display font-semibold">
+                Google Drive Folder: {driveFolder?.name || PORTFOLIO_DRIVE_FOLDER_NAME}
+              </h3>
+              {driveAccessToken ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Connected
+                </span>
+              ) : (
+                <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                  Connection required to upload/sync
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Uploaded photos are automatically stored in this dedicated Google Drive folder and loaded publicly across both AI Studio and GitHub Pages.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {driveFolder?.webViewLink && (
+            <a
+              href={driveFolder.webViewLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Open Drive Folder</span>
+            </a>
+          )}
+          <button
+            type="button"
+            disabled={syncingDrive}
+            onClick={handleCheckSyncFromDrive}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-60"
+          >
+            <FolderSync className="w-3.5 h-3.5" />
+            <span>{syncingDrive ? 'Syncing...' : 'Sync from Drive'}</span>
+          </button>
+          {!driveAccessToken && (
+            <button
+              type="button"
+              disabled={connectingDrive}
+              onClick={handleConnectDrive}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 text-xs font-medium shadow-sm transition-colors disabled:opacity-60"
+            >
+              <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 48 48" aria-hidden="true">
+                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+              </svg>
+              <span>{connectingDrive ? 'Connecting...' : 'Connect Google Drive'}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Upload Dropzone */}
       <div
         onDragOver={(e) => {
@@ -459,10 +728,10 @@ export function MediaLibraryManager() {
             <UploadCloud className="w-6 h-6" />
           </div>
           <h3 className="text-base font-display font-semibold">
-            Upload Images to Centralized Media Library
+            Upload Photos Directly to Google Drive
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Drag and drop JPG, PNG, WebP, or SVG files (max 10MB). SVGs are automatically sanitized and thumbnails are generated automatically.
+            Drag and drop JPG, PNG, WebP, or SVG files (max 10MB). Every upload is stored inside your dedicated Google Drive folder and made publicly readable for your portfolio.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <select
@@ -481,58 +750,71 @@ export function MediaLibraryManager() {
             </select>
             <button
               type="button"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || connectingDrive}
+              onClick={handleSelectFilesClick}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 disabled:opacity-60"
             >
               <ImagePlus className="w-4 h-4" />
-              <span>{uploading ? 'Uploading...' : 'Select Files'}</span>
+              <span>
+                {uploading
+                  ? 'Uploading to Drive...'
+                  : driveAccessToken
+                  ? 'Select Files'
+                  : 'Connect & Upload'}
+              </span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Add Hosted Image by URL (Works on GitHub Pages & static hosting) */}
-      <form
-        onSubmit={handleAddExternalUrl}
-        className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F131A] p-4 sm:p-5 space-y-3"
-      >
-        <div className="flex items-center gap-2">
-          <Link2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-          <h3 className="text-sm font-display font-semibold">
-            Add Hosted Image URL (Recommended for GitHub Pages)
-          </h3>
-        </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Files uploaded via the local server live only in <code className="font-mono">/uploads/</code> and do not persist on static GitHub Pages unless committed. Paste a permanent <code className="font-mono">https://</code> image URL here so it renders everywhere.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
-          <input
-            type="url"
-            required
-            value={externalUrl}
-            onChange={(e) => setExternalUrl(e.target.value)}
-            placeholder="https://example.com/your-photo.jpg"
-            aria-label="External image URL"
-            className="sm:col-span-6 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
-          />
-          <input
-            type="text"
-            value={externalTitle}
-            onChange={(e) => setExternalTitle(e.target.value)}
-            placeholder="Title (optional)"
-            aria-label="External image title"
-            className="sm:col-span-4 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
-          />
-          <button
-            type="submit"
-            disabled={addingByUrl}
-            className="sm:col-span-2 px-4 py-2 rounded-lg bg-slate-900 dark:bg-blue-600 text-white text-xs font-medium hover:opacity-90 disabled:opacity-60"
+      {/* Optional External URL Section */}
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F131A] p-4 sm:p-5">
+        <button
+          type="button"
+          onClick={() => setShowUrlSection((v) => !v)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <span className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300">
+            <Link2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span>Or add an external HTTPS image URL manually</span>
+          </span>
+          <span className="text-xs text-slate-500">
+            {showUrlSection ? 'Hide' : 'Expand'}
+          </span>
+        </button>
+
+        {showUrlSection && (
+          <form
+            onSubmit={handleAddExternalUrl}
+            className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 pt-3 mt-3 border-t border-slate-100 dark:border-slate-800/80"
           >
-            {addingByUrl ? 'Adding...' : 'Add URL'}
-          </button>
-        </div>
-      </form>
+            <input
+              type="url"
+              required
+              value={externalUrl}
+              onChange={(e) => setExternalUrl(e.target.value)}
+              placeholder="https://example.com/your-photo.jpg"
+              aria-label="External image URL"
+              className="sm:col-span-6 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
+            />
+            <input
+              type="text"
+              value={externalTitle}
+              onChange={(e) => setExternalTitle(e.target.value)}
+              placeholder="Title (optional)"
+              aria-label="External image title"
+              className="sm:col-span-4 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs"
+            />
+            <button
+              type="submit"
+              disabled={addingByUrl}
+              className="sm:col-span-2 px-4 py-2 rounded-lg bg-slate-900 dark:bg-blue-600 text-white text-xs font-medium hover:opacity-90 disabled:opacity-60"
+            >
+              {addingByUrl ? 'Adding...' : 'Add URL'}
+            </button>
+          </form>
+        )}
+      </div>
 
       {/* Filter Toolbar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -584,6 +866,7 @@ export function MediaLibraryManager() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {filteredAssets.map((asset) => {
             const refCount = findMediaReferences(asset.id, data).length;
+            const isDriveStored = Boolean(extractDriveFileId(asset.url));
             return (
               <div
                 key={asset.id}
@@ -609,6 +892,11 @@ export function MediaLibraryManager() {
                     }
                     className="w-full h-full object-cover"
                   />
+                  {isDriveStored && !brokenAssetIds[asset.id] && (
+                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-black/65 backdrop-blur-sm text-[10px] font-medium text-white">
+                      Google Drive
+                    </span>
+                  )}
                   {brokenAssetIds[asset.id] && (
                     <div className="absolute inset-0 bg-amber-950/85 text-amber-200 p-3 flex flex-col items-center justify-center text-center gap-1.5">
                       <AlertTriangle className="w-5 h-5 text-amber-400" />
@@ -616,7 +904,7 @@ export function MediaLibraryManager() {
                         File missing on this host
                       </span>
                       <span className="text-[10px] text-amber-300/90 leading-tight">
-                        Click Edit to set an https:// URL or Replace file
+                        Click Replace to upload to Google Drive
                       </span>
                     </div>
                   )}
@@ -651,10 +939,7 @@ export function MediaLibraryManager() {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setReplacingAsset(asset);
-                        replaceInputRef.current?.click();
-                      }}
+                      onClick={() => setPendingReplaceConfirm(asset)}
                       aria-label={`Replace image file for ${asset.title}`}
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-xs hover:bg-slate-100 dark:hover:bg-slate-800"
                     >
@@ -734,13 +1019,13 @@ export function MediaLibraryManager() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">Image URL (https:// or /uploads/...)</label>
+              <label className="text-xs font-medium">Image URL</label>
               <input
                 type="text"
                 required
                 value={editUrl}
                 onChange={(e) => setEditUrl(e.target.value)}
-                placeholder="https://example.com/photo.jpg"
+                placeholder="https://lh3.googleusercontent.com/d/..."
                 className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#090C12] text-xs font-mono"
               />
             </div>
@@ -774,6 +1059,40 @@ export function MediaLibraryManager() {
         </div>
       )}
 
+      {/* Confirmation before Replacing a Google Drive Asset */}
+      <ConfirmDialog
+        open={Boolean(pendingReplaceConfirm)}
+        destructive={false}
+        title={`Replace image for "${pendingReplaceConfirm?.title}"?`}
+        description="This will upload a new photo to your Google Drive portfolio folder, update the Media Library record, and remove the previous Google Drive file."
+        confirmLabel="Choose Replacement File"
+        onCancel={() => setPendingReplaceConfirm(null)}
+        onConfirm={async () => {
+          const target = pendingReplaceConfirm;
+          setPendingReplaceConfirm(null);
+          if (!target) return;
+          if (!driveAccessToken) {
+            const token = await handleConnectDrive();
+            if (!token) return;
+          }
+          setReplacingAsset(target);
+          replaceInputRef.current?.click();
+        }}
+      />
+
+      {/* Confirmation before Importing / Updating Permissions on Drive Folder Photos */}
+      <ConfirmDialog
+        open={Boolean(pendingSyncImages)}
+        destructive={false}
+        busy={syncingDrive}
+        title={`Import ${pendingSyncImages?.length ?? 0} photo(s) from Google Drive?`}
+        description={`Found ${pendingSyncImages?.length ?? 0} unlinked image(s) inside "${driveFolder?.name || PORTFOLIO_DRIVE_FOLDER_NAME}". Importing will set public viewer permissions on those Google Drive files so visitors can view them on your portfolio.`}
+        details={(pendingSyncImages || []).slice(0, 8).map((f) => f.name)}
+        confirmLabel="Import & Make Public"
+        onCancel={() => setPendingSyncImages(null)}
+        onConfirm={handleConfirmSyncImport}
+      />
+
       {/* Reference-Checked Delete Confirmation */}
       <ConfirmDialog
         open={Boolean(deleteTarget)}
@@ -787,7 +1106,9 @@ export function MediaLibraryManager() {
         description={
           deleteReferences.length > 0
             ? 'This image is currently referenced by live portfolio sections. Reassign those sections to another image before deleting.'
-            : 'This will permanently remove the asset record and file from the Media Library.'
+            : extractDriveFileId(deleteTarget?.url)
+            ? 'This will permanently delete the image file from your Google Drive folder and remove the record from the Media Library.'
+            : 'This will permanently remove the asset record from the Media Library.'
         }
         details={deleteReferences.map(
           (r) => `${r.entityType}: ${r.entityLabel} (${r.field})`

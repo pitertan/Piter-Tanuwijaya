@@ -1,0 +1,475 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized CMS administrator account with role-based permissions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["super_admin", "editor"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "createdAt", "updatedAt"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global site configuration and theme preferences.",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "brandWordmark": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "defaultTheme": { "type": "string", "enum": ["dark", "light"] },
+        "enableCustomCursor": { "type": "boolean" },
+        "enableParticles": { "type": "boolean" },
+        "seeded": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["siteName", "brandWordmark", "defaultTheme", "enableCustomCursor", "enableParticles", "seeded", "updatedAt"]
+    },
+    "PersonalProfile": {
+      "title": "PersonalProfile",
+      "description": "Core personal identity and headline profile.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "roleTitle": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "tagline": { "type": "string", "maxLength": 300 },
+        "location": { "type": "string", "maxLength": 120 },
+        "availabilityText": { "type": "string", "maxLength": 120 },
+        "avatarMediaId": { "type": "string", "maxLength": 128 },
+        "cvUrl": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "roleTitle", "tagline", "location", "availabilityText", "avatarMediaId", "cvUrl", "updatedAt"]
+    },
+    "HeroContent": {
+      "title": "HeroContent",
+      "description": "Hero section display copy, CTAs, and portrait media reference.",
+      "type": "object",
+      "properties": {
+        "eyebrow": { "type": "string", "maxLength": 120 },
+        "headline": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "subheadline": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "primaryCtaLabel": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "primaryCtaTarget": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "secondaryCtaLabel": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "secondaryCtaTarget": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "portraitMediaId": { "type": "string", "maxLength": 128 },
+        "metrics": { "type": "array", "maxItems": 6 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["eyebrow", "headline", "subheadline", "primaryCtaLabel", "primaryCtaTarget", "secondaryCtaLabel", "secondaryCtaTarget", "portraitMediaId", "metrics", "updatedAt"]
+    },
+    "AboutContent": {
+      "title": "AboutContent",
+      "description": "About section biography, career philosophy, expertise pillars, and CV link.",
+      "type": "object",
+      "properties": {
+        "introduction": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "background": { "type": "string", "maxLength": 2000 },
+        "philosophy": { "type": "string", "maxLength": 1000 },
+        "expertiseAreas": { "type": "array", "maxItems": 12 },
+        "photoMediaId": { "type": "string", "maxLength": 128 },
+        "cvDownloadLabel": { "type": "string", "maxLength": 80 },
+        "cvUrl": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["introduction", "summary", "background", "philosophy", "expertiseAreas", "photoMediaId", "cvDownloadLabel", "cvUrl", "updatedAt"]
+    },
+    "ContactInformation": {
+      "title": "ContactInformation",
+      "description": "Public contact channels and availability details.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 60 },
+        "location": { "type": "string", "maxLength": 160 },
+        "responseExpectation": { "type": "string", "maxLength": 240 },
+        "formHeading": { "type": "string", "maxLength": 160 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "phone", "location", "responseExpectation", "formHeading", "updatedAt"]
+    },
+    "FooterSettings": {
+      "title": "FooterSettings",
+      "description": "Footer brand statement and copyright text.",
+      "type": "object",
+      "properties": {
+        "brandStatement": { "type": "string", "maxLength": 400 },
+        "copyrightText": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "showBackToTop": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brandStatement", "copyrightText", "showBackToTop", "updatedAt"]
+    },
+    "SeoSettings": {
+      "title": "SeoSettings",
+      "description": "SEO metadata, Open Graph tags, and structured data configuration.",
+      "type": "object",
+      "properties": {
+        "siteTitle": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "metaDescription": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "keywords": { "type": "string", "maxLength": 400 },
+        "ogTitle": { "type": "string", "maxLength": 120 },
+        "ogDescription": { "type": "string", "maxLength": 300 },
+        "ogImageMediaId": { "type": "string", "maxLength": 128 },
+        "canonicalUrl": { "type": "string", "maxLength": 300 },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["siteTitle", "metaDescription", "keywords", "ogTitle", "ogDescription", "ogImageMediaId", "canonicalUrl", "updatedAt"]
+    },
+    "PortfolioSection": {
+      "title": "PortfolioSection",
+      "description": "Dynamic section ordering, visibility, titles, and layout preferences.",
+      "type": "object",
+      "properties": {
+        "sectionKey": { "type": "string", "enum": ["hero", "about", "experience", "skills", "projects", "gallery", "achievements", "education", "contact"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "subtitle": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "layoutStyle": { "type": "string", "enum": ["editorial", "grid", "timeline", "bento", "masonry", "split"] },
+        "isVisible": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sectionKey", "title", "subtitle", "description", "layoutStyle", "isVisible", "sortOrder", "updatedAt"]
+    },
+    "NavigationItem": {
+      "title": "NavigationItem",
+      "description": "Navigation menu link configurable from CMS.",
+      "type": "object",
+      "properties": {
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "href": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "location": { "type": "string", "enum": ["header", "footer", "both"] },
+        "isVisible": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["label", "href", "location", "isVisible", "sortOrder", "updatedAt"]
+    },
+    "SocialLink": {
+      "title": "SocialLink",
+      "description": "External social media profile link.",
+      "type": "object",
+      "properties": {
+        "platform": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "url": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "isVisible": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["platform", "label", "url", "isVisible", "sortOrder", "updatedAt"]
+    },
+    "Experience": {
+      "title": "Experience",
+      "description": "Work experience timeline entry.",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "companyLogoMediaId": { "type": "string", "maxLength": 128 },
+        "jobPosition": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "period": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "location": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "responsibilities": { "type": "array", "maxItems": 15 },
+        "achievements": { "type": "array", "maxItems": 15 },
+        "imageMediaIds": { "type": "array", "maxItems": 8 },
+        "isPublished": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["companyName", "companyLogoMediaId", "jobPosition", "period", "location", "description", "responsibilities", "achievements", "imageMediaIds", "isPublished", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "SkillCategory": {
+      "title": "SkillCategory",
+      "description": "Skill domain category.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 400 },
+        "isVisible": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "slug", "description", "isVisible", "sortOrder", "updatedAt"]
+    },
+    "Skill": {
+      "title": "Skill",
+      "description": "Technical or leadership skill item.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 400 },
+        "proficiencyLevel": { "type": "string", "enum": ["Core", "Advanced", "Proficient", "Exploring"] },
+        "yearsExperience": { "type": "integer" },
+        "iconName": { "type": "string", "maxLength": 60 },
+        "iconMediaId": { "type": "string", "maxLength": 128 },
+        "isPublished": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "categoryId", "description", "proficiencyLevel", "yearsExperience", "iconName", "iconMediaId", "isPublished", "sortOrder", "updatedAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Portfolio project showcase item with multi-image gallery.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 5000 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "technologies": { "type": "array", "maxItems": 20 },
+        "projectDate": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "role": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "projectUrl": { "type": "string", "maxLength": 400 },
+        "coverMediaId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "galleryMediaIds": { "type": "array", "maxItems": 20 },
+        "isFeatured": { "type": "boolean" },
+        "isPublished": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "slug", "summary", "description", "category", "technologies", "projectDate", "role", "projectUrl", "coverMediaId", "galleryMediaIds", "isFeatured", "isPublished", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "GalleryCategory": {
+      "title": "GalleryCategory",
+      "description": "Visual gallery filter category.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "slug", "sortOrder", "updatedAt"]
+    },
+    "GalleryItem": {
+      "title": "GalleryItem",
+      "description": "Visual gallery item linked to the media library.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "caption": { "type": "string", "maxLength": 400 },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "mediaId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "aspectRatio": { "type": "string", "enum": ["16:9", "4:3", "3:4", "1:1"] },
+        "isPublished": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "caption", "categoryId", "mediaId", "aspectRatio", "isPublished", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "Achievement": {
+      "title": "Achievement",
+      "description": "Award, recognition, or milestone achievement.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "organization": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "issueDate": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "verificationUrl": { "type": "string", "maxLength": 400 },
+        "mediaId": { "type": "string", "maxLength": 128 },
+        "isPublished": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "organization", "issueDate", "description", "verificationUrl", "mediaId", "isPublished", "sortOrder", "updatedAt"]
+    },
+    "Certification": {
+      "title": "Certification",
+      "description": "Professional certification or technical credential.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "organization": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "issueDate": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "credentialId": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "verificationUrl": { "type": "string", "maxLength": 400 },
+        "mediaId": { "type": "string", "maxLength": 128 },
+        "isPublished": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "organization", "issueDate", "credentialId", "description", "verificationUrl", "mediaId", "isPublished", "sortOrder", "updatedAt"]
+    },
+    "Education": {
+      "title": "Education",
+      "description": "Academic qualification or degree.",
+      "type": "object",
+      "properties": {
+        "institution": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "degree": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "studyPeriod": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "location": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "logoMediaId": { "type": "string", "maxLength": 128 },
+        "isPublished": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["institution", "degree", "studyPeriod", "location", "description", "logoMediaId", "isPublished", "sortOrder", "updatedAt"]
+    },
+    "MediaAsset": {
+      "title": "MediaAsset",
+      "description": "Centralized media library image record with metadata and dimensions.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "altText": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 600 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "url": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "thumbnailUrl": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "mimeType": { "type": "string", "enum": ["image/jpeg", "image/png", "image/webp", "image/svg+xml"] },
+        "sizeBytes": { "type": "integer" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" },
+        "filename": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "altText", "description", "category", "url", "thumbnailUrl", "mimeType", "sizeBytes", "width", "height", "filename", "createdBy", "createdAt", "updatedAt"]
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "Visitor inquiry submitted via public contact form.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "subject": { "type": "string", "minLength": 2, "maxLength": 200 },
+        "message": { "type": "string", "minLength": 10, "maxLength": 4000 },
+        "status": { "type": "string", "enum": ["unread", "read", "replied", "archived"] },
+        "adminNotes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "subject", "message", "status", "adminNotes", "createdAt", "updatedAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Immutable CMS administrative action audit log.",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorEmail": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "action": { "type": "string", "enum": ["create", "update", "delete", "publish", "unpublish", "upload", "seed"] },
+        "entityType": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "entityId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorUid", "actorEmail", "action", "entityType", "entityId", "summary", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "CMS administrator directory and role assignments."
+    },
+    "/site_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Global site settings singleton document."
+    },
+    "/personal_profiles/{profileId}": {
+      "schema": { "$ref": "#/entities/PersonalProfile" },
+      "description": "Personal profile singleton document."
+    },
+    "/hero_contents/{heroId}": {
+      "schema": { "$ref": "#/entities/HeroContent" },
+      "description": "Hero section content singleton document."
+    },
+    "/about_contents/{aboutId}": {
+      "schema": { "$ref": "#/entities/AboutContent" },
+      "description": "About section content singleton document."
+    },
+    "/contact_information/{contactId}": {
+      "schema": { "$ref": "#/entities/ContactInformation" },
+      "description": "Public contact channels singleton document."
+    },
+    "/footer_settings/{footerId}": {
+      "schema": { "$ref": "#/entities/FooterSettings" },
+      "description": "Footer configuration singleton document."
+    },
+    "/seo_settings/{seoId}": {
+      "schema": { "$ref": "#/entities/SeoSettings" },
+      "description": "SEO and OpenGraph metadata singleton document."
+    },
+    "/portfolio_sections/{sectionId}": {
+      "schema": { "$ref": "#/entities/PortfolioSection" },
+      "description": "Ordered and toggleable portfolio section configurations."
+    },
+    "/navigation_items/{navId}": {
+      "schema": { "$ref": "#/entities/NavigationItem" },
+      "description": "Header and footer navigation links."
+    },
+    "/social_links/{linkId}": {
+      "schema": { "$ref": "#/entities/SocialLink" },
+      "description": "Social media profile links."
+    },
+    "/experiences/{expId}": {
+      "schema": { "$ref": "#/entities/Experience" },
+      "description": "Work experience timeline entries."
+    },
+    "/skill_categories/{catId}": {
+      "schema": { "$ref": "#/entities/SkillCategory" },
+      "description": "Skill domain categories."
+    },
+    "/skills/{skillId}": {
+      "schema": { "$ref": "#/entities/Skill" },
+      "description": "Technical skills and expertise records."
+    },
+    "/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Portfolio showcase projects."
+    },
+    "/gallery_categories/{catId}": {
+      "schema": { "$ref": "#/entities/GalleryCategory" },
+      "description": "Gallery image categories."
+    },
+    "/galleries/{itemId}": {
+      "schema": { "$ref": "#/entities/GalleryItem" },
+      "description": "Visual gallery entries."
+    },
+    "/achievements/{achId}": {
+      "schema": { "$ref": "#/entities/Achievement" },
+      "description": "Achievements and awards."
+    },
+    "/certifications/{certId}": {
+      "schema": { "$ref": "#/entities/Certification" },
+      "description": "Professional certifications."
+    },
+    "/education/{eduId}": {
+      "schema": { "$ref": "#/entities/Education" },
+      "description": "Academic education records."
+    },
+    "/media_library/{mediaId}": {
+      "schema": { "$ref": "#/entities/MediaAsset" },
+      "description": "Centralized media library records."
+    },
+    "/contact_messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ContactMessage" },
+      "description": "Private visitor contact submissions readable only by admins."
+    },
+    "/activity_logs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "Immutable CMS administrative activity log."
+    }
+  }
+}

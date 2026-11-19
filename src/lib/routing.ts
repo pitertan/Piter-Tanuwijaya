@@ -40,3 +40,45 @@ export function hasVisitedAdminSession(): boolean {
     return false;
   }
 }
+
+export function getRouterBasename(
+  baseUrl = '/',
+  pathname = '/',
+  hostname = ''
+): string {
+  const trimmed = baseUrl.trim();
+  if (trimmed.startsWith('/') && trimmed !== '/') {
+    return trimmed.replace(/\/+$/, '');
+  }
+  if ((trimmed === './' || trimmed === '.') && hostname.endsWith('.github.io')) {
+    const firstSegment = pathname.split('/').filter(Boolean)[0];
+    if (firstSegment && firstSegment.toLowerCase() !== 'admin') {
+      return `/${firstSegment}`;
+    }
+  }
+  return '/';
+}
+
+export function resolveAssetUrl(
+  url: string | undefined,
+  baseUrl = '/',
+  pathname = '/',
+  hostname = ''
+): string {
+  if (!url) return '';
+  if (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('data:') ||
+    url.startsWith('blob:')
+  ) {
+    return url;
+  }
+  if (url.startsWith('/')) {
+    const basePrefix = getRouterBasename(baseUrl, pathname, hostname);
+    if (basePrefix !== '/' && !url.startsWith(`${basePrefix}/`)) {
+      return `${basePrefix}${url}`;
+    }
+  }
+  return url;
+}

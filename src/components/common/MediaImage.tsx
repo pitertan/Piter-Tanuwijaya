@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ImageOff } from 'lucide-react';
 import { usePortfolio } from '../../context/PortfolioContext';
+import { resolveAssetUrl } from '../../lib/routing';
 
 interface MediaImageProps {
   mediaId?: string;
@@ -23,7 +24,13 @@ export function MediaImage({
   const asset = resolveMedia(mediaId);
   const [failed, setFailed] = useState(false);
 
-  const src = useThumbnail ? asset?.thumbnailUrl || asset?.url : asset?.url;
+  const rawSrc = useThumbnail ? asset?.thumbnailUrl || asset?.url : asset?.url;
+  const src = resolveAssetUrl(
+    rawSrc,
+    import.meta.env.BASE_URL,
+    typeof window !== 'undefined' ? window.location.pathname : '/',
+    typeof window !== 'undefined' ? window.location.hostname : ''
+  );
 
   useEffect(() => {
     setFailed(false);

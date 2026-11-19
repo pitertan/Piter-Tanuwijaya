@@ -4,6 +4,7 @@ import { LayoutDashboard, X } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import {
   hasVisitedAdminSession,
+  resolveAssetUrl,
   shouldShowCmsReturnControl,
 } from '../lib/routing';
 import type { PortfolioSection } from '../types/portfolio';
@@ -66,10 +67,16 @@ export function PortfolioPage() {
         ogImgTag.setAttribute('property', 'og:image');
         document.head.appendChild(ogImgTag);
       }
+      const resolvedAssetPath = resolveAssetUrl(
+        ogImg.url,
+        import.meta.env.BASE_URL,
+        window.location.pathname,
+        window.location.hostname
+      );
       const resolvedUrl =
-        ogImg.url.startsWith('http://') || ogImg.url.startsWith('https://')
-          ? ogImg.url
-          : window.location.origin + ogImg.url;
+        resolvedAssetPath.startsWith('http://') || resolvedAssetPath.startsWith('https://')
+          ? resolvedAssetPath
+          : window.location.origin + resolvedAssetPath;
       ogImgTag.setAttribute('content', resolvedUrl);
     }
   }, [seo, resolveMedia]);

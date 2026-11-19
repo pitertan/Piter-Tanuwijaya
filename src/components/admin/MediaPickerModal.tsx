@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Check, ImagePlus, Search, X } from 'lucide-react';
 import { usePortfolio } from '../../context/PortfolioContext';
+import { resolveAssetUrl } from '../../lib/routing';
 import type { MediaAsset } from '../../types/portfolio';
 
 interface MediaPickerModalProps {
@@ -118,7 +119,12 @@ export function MediaPickerModal({
                   >
                     <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-900">
                       <img
-                        src={asset.thumbnailUrl || asset.url}
+                        src={resolveAssetUrl(
+                          asset.thumbnailUrl || asset.url,
+                          import.meta.env.BASE_URL,
+                          typeof window !== 'undefined' ? window.location.pathname : '/',
+                          typeof window !== 'undefined' ? window.location.hostname : ''
+                        )}
                         alt={asset.altText}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"

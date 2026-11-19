@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  getRouterBasename,
   isAdminPath,
+  resolveAssetUrl,
   resolveHashAdminRedirect,
   shouldShowCmsReturnControl,
 } from './routing';
@@ -52,5 +54,26 @@ test('shouldShowCmsReturnControl stays hidden for public visitors and shows for 
       fromAdminState: true,
     }),
     true
+  );
+});
+
+test('getRouterBasename and resolveAssetUrl handle root and GitHub Pages subpaths', () => {
+  assert.equal(getRouterBasename('/'), '/');
+  assert.equal(getRouterBasename('/my-portfolio/'), '/my-portfolio');
+  assert.equal(
+    getRouterBasename('./', '/my-portfolio/admin', 'user.github.io'),
+    '/my-portfolio'
+  );
+  assert.equal(
+    resolveAssetUrl('/src/assets/images/hero.jpg', '/my-portfolio/'),
+    '/my-portfolio/src/assets/images/hero.jpg'
+  );
+  assert.equal(
+    resolveAssetUrl('/src/assets/images/hero.jpg', '/'),
+    '/src/assets/images/hero.jpg'
+  );
+  assert.equal(
+    resolveAssetUrl('https://cdn.example.com/photo.jpg', '/my-portfolio/'),
+    'https://cdn.example.com/photo.jpg'
   );
 });

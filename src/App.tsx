@@ -16,7 +16,11 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { PortfolioProvider } from './context/PortfolioContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
-import { isAdminPath, resolveHashAdminRedirect } from './lib/routing';
+import {
+  getRouterBasename,
+  isAdminPath,
+  resolveHashAdminRedirect,
+} from './lib/routing';
 import { AdminPage } from './pages/AdminPage';
 import { PortfolioPage } from './pages/PortfolioPage';
 
@@ -48,12 +52,18 @@ function RouterEnhancements() {
 }
 
 export default function App() {
+  const routerBasename = getRouterBasename(
+    import.meta.env.BASE_URL,
+    typeof window !== 'undefined' ? window.location.pathname : '/',
+    typeof window !== 'undefined' ? window.location.hostname : ''
+  );
+
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
         <ToastProvider>
           <PortfolioProvider>
-            <BrowserRouter>
+            <BrowserRouter basename={routerBasename}>
               <RouterEnhancements />
               <Routes>
                 <Route path="/" element={<PortfolioPage />} />

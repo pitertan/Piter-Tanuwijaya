@@ -12,6 +12,7 @@ import {
 import { usePortfolio } from '../../context/PortfolioContext';
 import { useToast } from '../../context/ToastContext';
 import { auth } from '../../lib/firebase';
+import { resolveAssetUrl } from '../../lib/routing';
 import {
   findMediaReferences,
   findOrphanedMedia,
@@ -433,7 +434,12 @@ export function MediaLibraryManager() {
               >
                 <div className="relative aspect-[4/3] bg-slate-100 dark:bg-slate-900">
                   <img
-                    src={asset.thumbnailUrl || asset.url}
+                    src={resolveAssetUrl(
+                      asset.thumbnailUrl || asset.url,
+                      import.meta.env.BASE_URL,
+                      typeof window !== 'undefined' ? window.location.pathname : '/',
+                      typeof window !== 'undefined' ? window.location.hostname : ''
+                    )}
                     alt={asset.altText}
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
